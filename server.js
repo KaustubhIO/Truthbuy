@@ -7,8 +7,9 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Make sure this variable is set in your Render Dashboard
 const API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = process.env.MODEL_ID || "x-ai/grok-4.1-fast:free";
+const MODEL = process.env.MODEL_ID || "x-ai/grok-4.1-fast:free"; 
 
 app.use(cors());
 app.use(express.json());
@@ -24,20 +25,22 @@ app.post("/analyze", async (req, res) => {
       return res.status(400).json({ error: "Missing productData" });
     }
 
+    // Speed-Optimized Prompt
     const prompt = `
-Return only valid JSON in this exact format:
+Analyze this Amazon product. Return ONLY JSON.
 {
-  "reliability_score": number,
-  "verdict": "BUY" | "CONSIDER" | "AVOID",
+  "reliability_score": number (0-10),
+  "verdict": "BUY" | "CONSIDER" | "AVOID" | "CAUTION",
   "red_flags": [string],
   "pros": [string],
   "cons": [string],
+  "suitability": { "best": [string], "not": [string] },
+  "score_breakdown": { "Reliability": number, "Satisfaction": number, "Value": number },
+  "competitors": [string],
   "summary": string,
   "detailed_analysis": string
 }
-
-Product data:
-${JSON.stringify(product)}
+DATA: ${JSON.stringify(product).substring(0, 15000)} 
 `;
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -49,7 +52,6 @@ ${JSON.stringify(product)}
       body: JSON.stringify({
         model: MODEL,
         messages: [
-          { role: "system", content: "Always return ONLY valid JSON, no extra text." },
           { role: "user", content: prompt }
         ]
       })
@@ -63,8 +65,10 @@ ${JSON.stringify(product)}
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content || "";
 
+    // Robust JSON Parsing
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");
+    
     if (start === -1 || end === -1) {
       return res.status(500).json({ error: "Invalid JSON returned", raw });
     }
@@ -73,15 +77,11 @@ ${JSON.stringify(product)}
     res.json({ success: true, analysis: json });
 
   } catch (err) {
+    console.error("Server Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-git add server.js
-git commit -m "Improve TruthBuy scoring prompt and normalization"
-git push
-
 
 app.listen(PORT, () => {
   console.log(`TruthBuy backend running on port ${PORT}`);
 });
-
